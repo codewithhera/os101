@@ -667,7 +667,7 @@ If you are unsure where to begin, open an issue titled **“Looking for a first 
 
 ## Screenshots and Video
 
-Replace the images under `screen_shots/` with your latest captures, then they will appear here automatically.
+Screenshots live in `screen_shots/` as `sc_1.png` … `sc_6.png`. Drop in newer captures with the same filenames to refresh this section.
 
 ### Screenshots
 
