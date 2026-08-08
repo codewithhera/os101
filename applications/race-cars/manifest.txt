@@ -1,0 +1,3 @@
+name = Race Cars
+kind = builtin
+window_kind = Racing

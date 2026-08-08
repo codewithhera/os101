@@ -1,0 +1,63 @@
+// The allocation operators, for freestanding C++ on OS101.
+//
+// There is no std::bad_alloc and no std::set_new_handler: the applications
+// here are built with -fno-exceptions, so a throwing operator new has nothing
+// to throw. Failure ends the process through abort(), which is the only
+// honest thing left, and code that wants to handle it can use the nothrow
+// forms.
+#ifndef _OS101_NEW
+#define _OS101_NEW
+
+#include <stddef.h>
+
+namespace std {
+using size_t = decltype(sizeof(0));
+
+struct nothrow_t {
+    explicit nothrow_t() = default;
+};
+extern const nothrow_t nothrow;
+
+#if defined(__cpp_aligned_new)
+enum class align_val_t : size_t {};
+#endif
+} // namespace std
+
+void *operator new(std::size_t size);
+void *operator new[](std::size_t size);
+void *operator new(std::size_t size, const std::nothrow_t &) noexcept;
+void *operator new[](std::size_t size, const std::nothrow_t &) noexcept;
+
+void operator delete(void *p) noexcept;
+void operator delete[](void *p) noexcept;
+void operator delete(void *p, std::size_t size) noexcept;
+void operator delete[](void *p, std::size_t size) noexcept;
+void operator delete(void *p, const std::nothrow_t &) noexcept;
+void operator delete[](void *p, const std::nothrow_t &) noexcept;
+
+#if defined(__cpp_aligned_new)
+void *operator new(std::size_t size, std::align_val_t align);
+void *operator new[](std::size_t size, std::align_val_t align);
+void *operator new(std::size_t size, std::align_val_t align,
+                   const std::nothrow_t &) noexcept;
+void *operator new[](std::size_t size, std::align_val_t align,
+                     const std::nothrow_t &) noexcept;
+void operator delete(void *p, std::align_val_t align) noexcept;
+void operator delete[](void *p, std::align_val_t align) noexcept;
+void operator delete(void *p, std::size_t size, std::align_val_t align) noexcept;
+void operator delete[](void *p, std::size_t size,
+                       std::align_val_t align) noexcept;
+void operator delete(void *p, std::align_val_t align,
+                     const std::nothrow_t &) noexcept;
+void operator delete[](void *p, std::align_val_t align,
+                       const std::nothrow_t &) noexcept;
+#endif
+
+// Placement forms. Inline, so no library object is involved, exactly as the
+// standard library does it.
+inline void *operator new(std::size_t, void *p) noexcept { return p; }
+inline void *operator new[](std::size_t, void *p) noexcept { return p; }
+inline void operator delete(void *, void *) noexcept {}
+inline void operator delete[](void *, void *) noexcept {}
+
+#endif // _OS101_NEW

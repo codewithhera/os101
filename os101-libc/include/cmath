@@ -1,0 +1,45 @@
+// <cmath>: the C header, with its names also visible as std::.
+#ifndef _OS101_CMATH
+#define _OS101_CMATH
+
+#include <math.h>
+
+namespace std {
+using ::acos;
+using ::asin;
+using ::atan;
+using ::atan2;
+using ::cbrt;
+using ::ceil;
+using ::copysign;
+using ::cos;
+using ::cosh;
+using ::exp;
+using ::exp2;
+using ::fabs;
+using ::floor;
+using ::fmax;
+using ::fmin;
+using ::fmod;
+using ::frexp;
+using ::hypot;
+using ::isfinite;
+using ::isinf;
+using ::isnan;
+using ::ldexp;
+using ::log;
+using ::log10;
+using ::log2;
+using ::modf;
+using ::pow;
+using ::round;
+using ::signbit;
+using ::sin;
+using ::sinh;
+using ::sqrt;
+using ::tan;
+using ::tanh;
+using ::trunc;
+} // namespace std
+
+#endif // _OS101_CMATH

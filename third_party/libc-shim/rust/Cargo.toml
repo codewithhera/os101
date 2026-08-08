@@ -1,0 +1,12 @@
+[package]
+name = "os101-libc-shim"
+version = "0.0.1"
+edition = "2021"
+description = "The Rust half of the freestanding C environment QuickJS runs in."
+
+# Deliberately empty. Everything this crate needs is in `core` and `alloc`, and
+# the thirty-one libm functions QuickJS wants are already in the kernel's link
+# as weak symbols from `compiler_builtins` — see src/math.rs. Adding a crate
+# here would mean a registry fetch, and nothing in this repository's build is
+# allowed to need the network.
+[dependencies]

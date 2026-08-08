@@ -1,0 +1,3 @@
+name = Install OS101
+kind = builtin
+window_kind = Installer

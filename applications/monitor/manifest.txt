@@ -1,0 +1,3 @@
+name = Monitor
+kind = builtin
+window_kind = Monitor

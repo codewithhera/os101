@@ -1,0 +1,15 @@
+[package]
+name = "os101-tools"
+version = "0.0.1"
+edition = "2021"
+description = "Host-side tool: packages an OS101 kernel ELF into a bootable disk image."
+
+[dependencies]
+# The `.opk` package format, shared with the kernel so packed apps are
+# byte-for-byte what the in-OS installer validates.
+os101-package = { path = "../os101-package" }
+
+# The `bootloader` crate as a library exposes a disk-image builder. It links
+# its pre-built BIOS/UEFI stages in front of our kernel ELF and emits a raw
+# disk image that QEMU (or real hardware) can boot.
+bootloader = "0.11"

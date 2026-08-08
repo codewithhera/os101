@@ -1,0 +1,9 @@
+[package]
+name = "os101-package"
+version = "0.1.0"
+edition = "2021"
+description = "The OS101 `.opk` application package format, shared by the kernel and host tooling."
+
+# `no_std` + `alloc` so the kernel can link it, but the test harness needs
+# `std`, so `std` is enabled only under `cfg(test)` (see src/lib.rs).
+[dependencies]

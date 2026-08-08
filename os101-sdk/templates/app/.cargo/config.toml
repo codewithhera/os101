@@ -1,0 +1,16 @@
+[unstable]
+# Apps are built for `kernel/x86_64-os101.json`, a custom target with hardware
+# SSE2, which has no prebuilt `core` — so it is compiled from `rust-src`. The
+# target itself is not named here: a copy of this template can live anywhere,
+# so the path to the spec would be wrong more often than right. `build.sh`
+# passes it on the command line.
+json-target-spec = true
+build-std = ["core", "compiler_builtins", "alloc"]
+build-std-features = ["compiler-builtins-mem"]
+
+[target.x86_64-os101]
+rustflags = [
+    # Userspace image base — sit above the kernel image. See kernel's
+    # USER_BASE in kernel/src/process.rs.
+    "-C", "link-arg=-Ttext=0x10000000",
+]

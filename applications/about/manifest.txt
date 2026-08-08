@@ -1,0 +1,3 @@
+name = About
+kind = builtin
+window_kind = About

@@ -1,0 +1,3 @@
+name = Space Invaders
+kind = builtin
+window_kind = Invaders

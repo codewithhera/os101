@@ -1,0 +1,3 @@
+name = Snake
+kind = builtin
+window_kind = Snake

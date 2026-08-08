@@ -1,0 +1,21 @@
+[build]
+# Build the kernel for bare-metal x86_64 — no OS, no libc, no allocator.
+# The stock `x86_64-unknown-none` target would do, except that it forbids SSE
+# and picks the softfloat ABI, and clang refuses to compile a C function that
+# returns a `double` for x86-64 without SSE ("SSE register return with SSE
+# disabled"). The C libraries we want to link into the kernel are full of
+# them, so the target has to allow the hardware that `interrupts::enable_sse`
+# turns on before anything else runs. `x86_64-os101.json` is that target: the
+# stock spec with `+sse,+sse2` and the ordinary hardware-float ABI.
+#
+# A custom target has no prebuilt `core`, so it has to be compiled from the
+# `rust-src` component on every fresh checkout — the first build is slow, and
+# `compiler-builtins-mem` is what supplies `memcpy` and friends that the
+# prebuilt `compiler_builtins` used to bring along.
+target = "x86_64-os101.json"
+
+[unstable]
+# Naming a `.json` target at all is gated separately from `build-std`.
+json-target-spec = true
+build-std = ["core", "compiler_builtins", "alloc"]
+build-std-features = ["compiler-builtins-mem"]

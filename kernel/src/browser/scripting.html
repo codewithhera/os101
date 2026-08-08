@@ -1,0 +1,202 @@
+<html>
+<head><title>OS101 — scripting</title>
+<style>
+body { background-color: #0F172A; color: #E2E8F0; padding: 12px }
+h1 { color: #38BDF8 }
+td, th { padding: 2px; color: #CBD5E1 }
+th { color: #94A3B8 }
+.ok { color: #4ADE80; font-weight: bold }
+.bad { color: #F87171; font-weight: bold }
+#counter { color: #FDE047; font-weight: bold }
+/* Spelled out because this page is dark: the user-agent sheet's dark-on-light
+   button loses its label to the light text colour the body sets. */
+button { background-color: #1D4ED8; color: #F8FAFC; font-weight: bold }
+.note { color: #64748B }
+</style>
+</head>
+<body>
+<h1>Nothing on this page is in its HTML</h1>
+<p class="note">Everything below was written by the page's own JavaScript,
+running on QuickJS inside the kernel. Press the button; the count is kept in
+<b>localStorage</b> and survives a reboot.</p>
+
+<p><button id="press">Press me</button>
+   <span id="counter">not pressed yet</span></p>
+
+<div id="out"></div>
+<p id="timer" class="note">waiting for a timer&hellip;</p>
+<p id="frame" class="note">waiting for a repaint&hellip;</p>
+<p id="ticks" class="note">waiting for setInterval&hellip;</p>
+
+<script>
+// Every check is a name and a function that returns what it produced. The
+// results are compared against what they should be, and the table is built from
+// the outcome — so a failure shows up as a red row rather than as a blank page.
+class Check {
+  constructor(name, produce, want) {
+    this.name = name;
+    this.produce = produce;
+    this.want = want;
+  }
+  run() {
+    try {
+      const got = String(this.produce());
+      return { name: this.name, got, ok: got === this.want, want: this.want };
+    } catch (e) {
+      return { name: this.name, got: `${e.name}: ${e.message}`, ok: false, want: this.want };
+    }
+  }
+}
+
+function* fib() {
+  let [a, b] = [0, 1];
+  for (;;) { yield a; [a, b] = [b, a + b]; }
+}
+
+const take = (n, of) => {
+  const out = [];
+  for (const v of of) { if (out.length === n) break; out.push(v); }
+  return out;
+};
+
+const checks = [
+  new Check('template literals and arrow functions',
+    () => ((who) => `hello, ${who.toUpperCase()}`)('os101'), 'hello, OS101'),
+  new Check('a class with a getter and inheritance',
+    () => {
+      class Point { constructor(x, y) { this.x = x; this.y = y }
+                    get length() { return Math.hypot(this.x, this.y) } }
+      class Named extends Point { constructor(x, y, n) { super(x, y); this.n = n }
+                                  toString() { return `${this.n}=${this.length}` } }
+      return String(new Named(3, 4, 'p'));
+    }, 'p=5'),
+  new Check('a generator, spread and destructuring',
+    () => take(8, fib()).join(','), '0,1,1,2,3,5,8,13'),
+  new Check('let is scoped per iteration',
+    () => { const fs = []; for (let i = 0; i < 3; i++) fs.push(() => i);
+            return fs.map(f => f()).join(',') }, '0,1,2'),
+  new Check('a regular expression with named groups',
+    () => '2026-07-28'.replace(/(?<y>\d{4})-(?<m>\d{2})-(?<d>\d{2})/, '$<d>/$<m>/$<y>'),
+    '28/07/2026'),
+  new Check('Map, Set and optional chaining',
+    () => { const m = new Map([['a', { n: 1 }]]);
+            return `${[...new Set([1, 1, 2])].length}${m.get('a')?.n}${m.get('z')?.n}` },
+    '21undefined'),
+  new Check('BigInt beyond a double',
+    () => (2n ** 70n).toString(), '1180591620717411303424'),
+  new Check('JSON round trip',
+    () => JSON.stringify(JSON.parse('{"a":[1,{"b":null}]}')), '{"a":[1,{"b":null}]}'),
+  new Check('numbers are IEEE doubles',
+    () => String(0.1 + 0.2), '0.30000000000000004'),
+  new Check('the clock is the machine\'s',
+    () => new Date().getFullYear() >= 2024, 'true'),
+  new Check('a node this script made is in the document',
+    () => { const p = document.createElement('p');
+            p.textContent = 'temporary';
+            const detached = document.getElementById('nope-not-here') === null
+                             && p.parentNode === null;
+            document.body.appendChild(p);
+            const attached = p.parentNode === document.body;
+            p.remove();
+            return `${detached}/${attached}/${p.parentNode === null}` },
+    'true/true/true'),
+  new Check('one element, one wrapper',
+    () => document.getElementById('out') === document.querySelector('#out'), 'true'),
+  new Check('getBoundingClientRect comes from the layout',
+    () => document.querySelector('h1').getBoundingClientRect().width > 200, 'true'),
+  new Check('a style written from script reaches the attribute',
+    () => { const h = document.querySelector('h1');
+            h.style.letterSpacing = '1px';
+            return h.getAttribute('style').indexOf('letter-spacing') >= 0 },
+    'true'),
+  new Check('classList and dataset',
+    () => { const d = document.getElementById('out');
+            d.classList.add('lit', 'wide');
+            d.classList.remove('wide');
+            d.dataset.builtBy = 'quickjs';
+            return `${d.className}/${d.dataset.builtBy}/${d.classList.contains('wide')}` },
+    'lit/quickjs/false'),
+  new Check('a selector with a combinator',
+    () => document.querySelectorAll('body p').length >= 3, 'true'),
+];
+
+const results = checks.map(c => c.run());
+
+// One layout for the whole table, not one per row: the browser batches the
+// mutations and lays out once when the script finishes.
+const table = document.createElement('table');
+table.innerHTML = '<tr><th>what</th><th>result</th></tr>';
+for (const r of results) {
+  const row = document.createElement('tr');
+  const name = document.createElement('td');
+  name.textContent = r.name;
+  const outcome = document.createElement('td');
+  outcome.className = r.ok ? 'ok' : 'bad';
+  outcome.textContent = r.ok ? `ok — ${r.got}` : `wrong — got ${r.got}, wanted ${r.want}`;
+  row.appendChild(name);
+  row.appendChild(outcome);
+  table.appendChild(row);
+}
+
+const passed = results.filter(r => r.ok).length;
+const heading = document.createElement('h3');
+heading.className = passed === results.length ? 'ok' : 'bad';
+heading.textContent = `${passed} of ${results.length} checks passed`;
+
+const out = document.getElementById('out');
+out.appendChild(heading);
+out.appendChild(table);
+
+// An event listener, and a counter kept across visits and across reboots.
+let presses = Number(localStorage.getItem('presses') || 0);
+const label = document.getElementById('counter');
+label.textContent = presses > 0
+  ? `pressed ${presses} time${presses === 1 ? '' : 's'} before`
+  : 'not pressed yet';
+
+document.getElementById('press').addEventListener('click', (event) => {
+  presses += 1;
+  localStorage.setItem('presses', String(presses));
+  label.textContent = `pressed ${presses} time${presses === 1 ? '' : 's'}`
+                    + ` — last one at ${Math.round(event.clientX)},${Math.round(event.clientY)}`;
+});
+
+// A timer and a promise, both of which need the browser's event loop to come
+// back and drain them.
+setTimeout(async () => {
+  const when = await Promise.resolve(new Date().toISOString().slice(11, 19));
+  document.getElementById('timer').textContent = `a setTimeout fired, and its await resumed, at ${when} UTC`;
+  document.getElementById('timer').className = 'ok';
+}, 120);
+
+// A repeating timer, which only keeps going if the browser's own event loop
+// comes back to the engine while the page is just sitting on screen. It is the
+// one thing on this page that cannot be faked by running the script once.
+let ticks = 0;
+const started = Date.now();
+const clock = document.getElementById('ticks');
+setInterval(() => {
+  ticks += 1;
+  const seconds = ((Date.now() - started) / 1000).toFixed(1);
+  clock.textContent = `setInterval has fired ${ticks} times over ${seconds} s`
+                    + ' \u2014 the page is still running';
+  clock.className = 'ok';
+}, 250);
+
+requestAnimationFrame((t) => {
+  const frame = document.getElementById('frame');
+  frame.textContent = `requestAnimationFrame ran ${Math.round(t)} ms after boot`;
+  frame.className = 'ok';
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+  const note = document.createElement('p');
+  note.className = 'note';
+  note.textContent = `DOMContentLoaded fired with readyState "${document.readyState}",`
+                   + ` in a ${window.innerWidth}\u00d7${window.innerHeight} viewport,`
+                   + ` on ${navigator.userAgent.split(') ')[0]})`;
+  document.body.appendChild(note);
+});
+</script>
+</body>
+</html>

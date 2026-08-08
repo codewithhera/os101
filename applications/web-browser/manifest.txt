@@ -1,0 +1,3 @@
+name = Web Browser
+kind = builtin
+window_kind = Browser

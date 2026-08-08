@@ -1,0 +1,3 @@
+name = WinGUI
+kind = elf
+binary = target/wingui.elf

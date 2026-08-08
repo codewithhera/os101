@@ -1,0 +1,3 @@
+name = Hello C
+kind = elf
+binary = target/hello-c.elf

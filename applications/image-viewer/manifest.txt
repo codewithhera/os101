@@ -1,0 +1,3 @@
+name = Image Viewer
+kind = builtin
+window_kind = ImageView

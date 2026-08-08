@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#
+# The C++ driver. Everything is in os101-cc; this adds the C++ language mode,
+# which means -fno-exceptions -fno-rtti and linking os101-libc's C++ runtime
+# support (src/cxxrt.cpp: the new and delete operators, __cxa_atexit and the
+# guard variables around function-local statics).
+#
+# Those two flags are not a preference. There is no unwinder and no
+# std::type_info in os101-libc, so a build with exceptions or RTTI enabled would
+# link only by accident; keeping the flags in the driver is what keeps what the
+# compiler asks for and what the library provides in step.
+#
+set -euo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "${SELF_DIR}/os101-cc" --cxx "$@"

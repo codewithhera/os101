@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+"""Generate a QEMU monitor driver script.
+
+The monitor has no `sleep`, so pacing has to come from the shell feeding its
+stdin. This emits a `/bin/sh` script that interleaves `sleep` with `sendkey`
+and `screendump` commands, which the runner pipes into `qemu -monitor stdio`.
+
+Usage:
+    drive.py <out.sh> <boot-wait> [step ...]
+
+A step is one of:
+    type:<text>     send <text> as keystrokes
+    key:<name>      send one raw key (e.g. ret, spc)
+    wait:<seconds>  pause
+    shot:<path>     screendump to <path>
+    click:<x>,<y>   left-click at that point
+    dblclick:<x>,<y>  left-click twice, fast enough to count as a double
+    rclick:<x>,<y>  right-click at that point
+    drag:<x1>,<y1>,<x2>,<y2>  press, travel, release
+    mon:<command>   send a raw monitor command
+"""
+import sys
+
+# QEMU `sendkey` names for characters that are not their own key name.
+SPECIAL = {
+    " ": "spc",
+    "/": "slash",
+    ".": "dot",
+    "-": "minus",
+    ",": "comma",
+    ";": "semicolon",
+    "=": "equal",
+    "\n": "ret",
+    "'": "apostrophe",
+    "\\": "backslash",
+}
+# Characters that need shift on a US layout.
+SHIFTED = {
+    "_": "minus",
+    ":": "semicolon",
+    "?": "slash",
+    "+": "equal",
+    "<": "comma",
+    ">": "dot",
+    "\"": "apostrophe",
+    "(": "9",
+    ")": "0",
+    "{": "bracket_left",
+    "}": "bracket_right",
+    "[": "bracket_left",
+    "]": "bracket_right",
+    "#": "3",
+    "!": "1",
+    "@": "2",
+    "$": "4",
+    "%": "5",
+    "^": "6",
+    "&": "7",
+    "*": "8",
+    "|": "backslash",
+}
+
+
+
+def key_for(ch):
+    if ch in SPECIAL:
+        return SPECIAL[ch]
+    if ch in SHIFTED:
+        return f"shift-{SHIFTED[ch]}"
+    if ch.isdigit():
+        return ch
+    if ch.isalpha():
+        return ch.lower() if ch.islower() else f"shift-{ch.lower()}"
+    raise SystemExit(f"drive.py: no key mapping for {ch!r}")
+
+
+# A PS/2 mouse packet carries a 9-bit signed delta, so anything beyond about
+# 255 counts is clamped rather than split. Every move therefore has to be
+# issued as a series of small hops.
+#
+# The hops are deliberately small and slow. The guest reads the 8042 one byte
+# per interrupt, and if it is busy — laying out a page, say — a burst of moves
+# arrives faster than it drains and the pointer lands short of where it was
+# aimed. Thirty-two counts every tenth of a second is dull but lands where you
+# asked, which matters when the target is a button.
+STEP = 32
+HOP_DELAY = 0.1
+
+# The guest does not move one pixel per mouse count. `kernel/src/mouse.rs`
+# scales every delta by the screen width over POINTER_BASELINE_W, times
+# POINTER_SENSITIVITY, so that the hand movement needed to cross the screen
+# does not grow with the resolution. Steps here are given in pixels — where the
+# thing being clicked is — so they have to be converted back into the counts
+# that produce them. Keep these three in step with the kernel; the mapping is
+# linear precisely so that this inversion is possible.
+#
+# This is the *virtual* canvas the kernel draws and clamps the pointer to
+# (`kernel/src/framebuffer.rs`'s `FramebufferWriter::info`), which is half of
+# the physical VBE mode (`main::DISPLAY_WIDTH`/`HEIGHT`) in each dimension —
+# `present()` doubles every pixel on the way to VRAM so fonts and icons stay
+# normal-sized on a Retina host. `click:`/`dblclick:`/`drag:` steps and a
+# `screendump` are therefore in different coordinate spaces: clicks aim at
+# this smaller canvas, but a screenshot comes back at the full physical size,
+# 2x these numbers in each dimension.
+GUEST_WIDTH = 1348
+GUEST_HEIGHT = 840
+POINTER_BASELINE_W = 1280
+POINTER_SENSITIVITY = 1.5
+PIXELS_PER_COUNT = max(GUEST_WIDTH / POINTER_BASELINE_W, 1.0) * POINTER_SENSITIVITY
+
+
+def counts(pixels):
+    """Mouse counts that move the guest pointer `pixels` pixels."""
+    return round(pixels / PIXELS_PER_COUNT)
+
+
+def hops(dx, dy):
+    """Split a pixel delta into packets the PS/2 protocol can actually carry."""
+    dx, dy = counts(dx), counts(dy)
+    out = []
+    n = max((abs(dx) + STEP - 1) // STEP, (abs(dy) + STEP - 1) // STEP, 1)
+    for i in range(1, n + 1):
+        # Accumulate against the exact target so rounding cannot drift.
+        sx = dx * i // n - dx * (i - 1) // n
+        sy = dy * i // n - dy * (i - 1) // n
+        out.append(f"echo mouse_move {sx} {sy}")
+        out.append(f"sleep {HOP_DELAY}")
+    return out
+
+
+def home_pointer():
+    """Park the pointer at the top-left, giving absolute moves an origin."""
+    # Deliberately further than the screen is wide: the guest clamps at the
+    # edge, so overshooting is what makes the corner a reliable origin.
+    return hops(-2 * GUEST_WIDTH, -2 * GUEST_HEIGHT) + ["sleep 0.3"]
+
+
+def move_to(x, y):
+    return hops(int(x), int(y)) + ["sleep 0.4"]
+
+
+def main():
+    if len(sys.argv) < 3:
+        raise SystemExit(__doc__)
+    out_path = sys.argv[1]
+    boot_wait = sys.argv[2]
+    steps = sys.argv[3:]
+
+    lines = ["#!/bin/sh", "# Generated by tools/qemu-runner/drive.py", ""]
+    lines.append(f"sleep {boot_wait}")
+
+    for step in steps:
+        kind, _, arg = step.partition(":")
+        if kind == "type":
+            for ch in arg:
+                lines.append(f"echo sendkey {key_for(ch)}")
+                # The guest polls the PS/2 controller from its event loop;
+                # pacing keeps keystrokes from being coalesced or dropped.
+                lines.append("sleep 0.12")
+        elif kind == "key":
+            lines.append(f"echo sendkey {arg}")
+            lines.append("sleep 0.3")
+        elif kind == "wait":
+            lines.append(f"sleep {arg}")
+        elif kind == "shot":
+            lines.append(f"echo screendump {arg}")
+            lines.append("sleep 3")
+        elif kind in ("click", "dblclick", "rclick"):
+            x, y = arg.split(",")
+            lines += home_pointer() + move_to(x, y)
+            # The monitor's mouse_button takes a PS/2 button mask, so 2 is the
+            # right button — not the 4 the input-subsystem ordering suggests.
+            button = 2 if kind == "rclick" else 1
+            presses = 2 if kind == "dblclick" else 1
+            for i in range(presses):
+                lines.append(f"echo mouse_button {button}")
+                lines.append("sleep 0.15")
+                lines.append("echo mouse_button 0")
+                # Inside a double-click the gap has to stay under the guest's
+                # threshold; after the last one, give the app time to react.
+                lines.append("sleep 0.15" if i + 1 < presses else "sleep 1.0")
+        elif kind == "mon":
+            lines.append(f"echo {arg}")
+            lines.append("sleep 0.5")
+        elif kind == "drag":
+            # Press at the first point, travel through a few intermediate
+            # ones, release at the last. Needed to exercise anything that
+            # responds to mouse motion rather than to clicks, like painting.
+            x1, y1, x2, y2 = (int(v) for v in arg.split(","))
+            lines += home_pointer() + move_to(x1, y1)
+            lines.append("echo mouse_button 1")
+            lines.append("sleep 0.3")
+            lines += hops(x2 - x1, y2 - y1)
+            lines.append("echo mouse_button 0")
+            lines.append("sleep 0.8")
+        else:
+            raise SystemExit(f"drive.py: unknown step {step!r}")
+
+    lines.append("echo quit")
+    lines.append("sleep 2")
+    lines.append("")
+
+    with open(out_path, "w") as f:
+        f.write("\n".join(lines))
+    print(f"wrote {out_path} ({len(steps)} steps)")
+
+
+if __name__ == "__main__":
+    main()

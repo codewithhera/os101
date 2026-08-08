@@ -1,0 +1,65 @@
+[package]
+name = "os101-kernel"
+version = "0.0.1"
+edition = "2021"
+description = "The OS101 kernel — bare-metal, no_std."
+
+[features]
+test-runner = []
+
+[dependencies]
+# The `.opk` application package format. Shared with the host packaging tool
+# so a package the tool writes is exactly what the installer expects.
+os101-package = { path = "../os101-package" }
+
+# The freestanding C environment QuickJS runs in. Depending on this crate is
+# also what pulls the engine's own archive into the link: `build.rs` there
+# compiles `third_party/quickjs` and bundles `libquickjs.a` into the rlib.
+# `quickjs::install()` in `kernel_main` is what keeps rustc from dropping the
+# whole thing back out again — see third_party/README.md.
+os101-libc-shim = { path = "../third_party/libc-shim/rust" }
+
+# The kernel-facing half of the bootloader contract: data structures the
+# bootloader fills in (framebuffer info, memory map, etc.) and the
+# `entry_point!` macro that declares our kernel's entry symbol.
+bootloader_api = "0.11"
+
+# Spin-lock primitives for the shared framebuffer writer. Once we have a real
+# scheduler and interrupt-safe sync, we'll swap for something smarter.
+spin = "0.9"
+
+# UART 16550 serial port driver — sends kernel output to the host terminal
+# via QEMU's `-serial stdio`.
+uart_16550 = "0.3"
+
+# Lazy one-time initialisation for statics that need runtime data.
+lazy_static = { version = "1", features = ["spin_no_std"] }
+
+# PS/2 keyboard scancode decoder.
+pc-keyboard = "0.7"
+
+# Basic heap allocator.
+linked_list_allocator = "0.10"
+
+# Lock-free queues for interrupt-safe event handling.
+crossbeam-queue = { version = "0.3", default-features = false, features = ["alloc"] }
+
+# Pre-rendered monospace bitmap font. Avoids writing/embedding one by hand.
+[dependencies.noto-sans-mono-bitmap]
+version = "0.3"
+default-features = false
+features = [
+    "regular", "bold",
+    # The GUI draws at 16px; the browser needs the larger faces so headings
+    # are actually headings rather than bold body text.
+    "size_16", "size_20", "size_24", "size_32",
+    "unicode-basic-latin",
+]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1

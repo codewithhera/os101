@@ -1,0 +1,3 @@
+name = Paint
+kind = builtin
+window_kind = Paint

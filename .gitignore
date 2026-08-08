@@ -1,0 +1,32 @@
+# Build artifacts
+/build/
+/kernel/target/
+/tools/target/
+/os101-package/target/
+/applications/*/target/
+/os101-sdk/templates/app/target/
+
+# Packaged applications
+*.opk
+
+# Cargo lock files for workspace
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# OS files
+*.exe
+*.dll
+*.so
+
+# Keep .sh files in git
+!*.sh
+type:gui

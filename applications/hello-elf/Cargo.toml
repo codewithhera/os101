@@ -1,0 +1,15 @@
+[package]
+name = "hello-elf"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+os101-user = { path = "../../os101-user" }
+linked_list_allocator = "0.10"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+
+[workspace]

@@ -1,0 +1,401 @@
+#!/usr/bin/env bash
+#
+# Build a C (or, through os101-c++, a C++) source file into a runnable OS101
+# application, in one command:
+#
+#     tools/os101-cc  -o build/hello.elf hello.c
+#     tools/os101-c++ -o build/hello.elf hello.cpp other.cpp
+#
+# What this has to get right, and why:
+#
+#   * The target is x86_64-unknown-none-elf, not the build machine. Apple clang
+#     carries the X86 backend and LLVM can write ELF, so the compiler needs no
+#     help; the *linker* does. Apple's ld cannot produce ELF at all, so this
+#     uses rust-lld in its GNU flavour, which the repository already depends on
+#     for the kernel — no Homebrew, nothing to install beyond a Rust toolchain
+#     and Xcode's command line tools.
+#
+#   * The image is static, non-PIE and linked at the fixed address the kernel
+#     loads it at (see os101-libc/user.ld). There is no dynamic loader and no
+#     relocation processing in kernel/src/process.rs, so anything else is a
+#     crash rather than a warning. The ELF is checked for exactly that before
+#     this script reports success.
+#
+#   * -mno-red-zone is not optional. The kernel's syscall entry stub runs on the
+#     application's own stack and writes 520 bytes below RSP (kernel/src/
+#     syscall.rs saves the SSE register file there), so the 128-byte red zone
+#     the ABI would otherwise allow does not exist here.
+#
+#   * The library objects are cached under build/os101-libc and rebuilt only
+#     when a source or a header is newer, so building an application after the
+#     first time is two or three compiler runs, not twenty.
+#
+set -euo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "${SELF_DIR}/.." && pwd)"
+LIBC="${ROOT}/os101-libc"
+CACHE="${ROOT}/build/os101-libc"
+
+LANG_MODE="c"
+if [ "${1:-}" = "--cxx" ]; then
+  LANG_MODE="c++"
+  shift
+fi
+
+PROG="os101-cc"
+if [ "${LANG_MODE}" = "c++" ]; then
+  PROG="os101-c++"
+fi
+
+die() {
+  echo "${PROG}: error: $*" >&2
+  exit 1
+}
+
+usage() {
+  cat >&2 <<EOF
+usage: ${PROG} [options] -o <output.elf> <source...>
+
+Options are passed through to clang; the ones this script reads itself are:
+  -o <file>     where to write the application ELF (required)
+  -v            show every command as it runs
+  -O<n> -g      forwarded; -O2 is used when no -O is given
+  -I -D -W -f -std=...   forwarded
+
+Sources may be .c, .cpp/.cc/.cxx (with ${PROG} os101-c++), .S or .o files.
+EOF
+  exit 2
+}
+
+VERBOSE=0
+OUT=""
+SOURCES=()
+USER_FLAGS=()
+HAVE_OPT=0
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -h|--help)
+      usage
+      ;;
+    -v)
+      VERBOSE=1
+      shift
+      ;;
+    -o)
+      [ "$#" -ge 2 ] || die "-o needs an argument"
+      OUT="$2"
+      shift 2
+      ;;
+    -o*)
+      OUT="${1#-o}"
+      shift
+      ;;
+    -O*)
+      HAVE_OPT=1
+      USER_FLAGS+=("$1")
+      shift
+      ;;
+    -*)
+      USER_FLAGS+=("$1")
+      shift
+      ;;
+    *)
+      SOURCES+=("$1")
+      shift
+      ;;
+  esac
+done
+
+[ -n "${OUT}" ] || die "no output file: pass -o <output.elf>"
+[ "${#SOURCES[@]}" -gt 0 ] || die "no input files"
+[ "${HAVE_OPT}" -eq 1 ] || USER_FLAGS+=("-O2")
+
+run() {
+  if [ "${VERBOSE}" -eq 1 ]; then
+    printf '+'
+    printf ' %q' "$@"
+    printf '\n'
+  fi
+  "$@"
+}
+
+# ---- the toolchain -------------------------------------------------------
+
+CLANG="${OS101_CLANG:-}"
+if [ -z "${CLANG}" ]; then
+  if command -v clang >/dev/null 2>&1; then
+    CLANG="$(command -v clang)"
+  elif command -v xcrun >/dev/null 2>&1 && xcrun --find clang >/dev/null 2>&1; then
+    CLANG="$(xcrun --find clang)"
+  else
+    die "no clang found. Install Xcode's command line tools (xcode-select --install) or set OS101_CLANG."
+  fi
+fi
+
+# rust-lld ships with the Rust toolchain the kernel already needs. ld.lld is
+# preferred when it happens to be installed: same linker, shorter command line.
+find_linker() {
+  if [ -n "${OS101_LD:-}" ]; then
+    echo "${OS101_LD}"
+    return
+  fi
+  if command -v ld.lld >/dev/null 2>&1; then
+    echo "$(command -v ld.lld)"
+    return
+  fi
+  if command -v rustc >/dev/null 2>&1; then
+    local sysroot
+    sysroot="$(rustc --print sysroot)"
+    local candidate
+    for candidate in "${sysroot}"/lib/rustlib/*/bin/rust-lld; do
+      if [ -x "${candidate}" ]; then
+        echo "${candidate}"
+        return
+      fi
+    done
+  fi
+  echo ""
+}
+
+LD="$(find_linker)"
+if [ -z "${LD}" ]; then
+  die "no ELF linker found. Install a Rust toolchain (rust-lld comes with it) or set OS101_LD to an ld.lld."
+fi
+LD_ARGS=()
+case "$(basename "${LD}")" in
+  rust-lld)
+    # rust-lld dispatches on -flavor; gnu is the ELF driver.
+    LD_ARGS=(-flavor gnu)
+    ;;
+esac
+
+find_ar() {
+  if [ -n "${OS101_AR:-}" ]; then
+    echo "${OS101_AR}"
+    return
+  fi
+  if command -v llvm-ar >/dev/null 2>&1; then
+    echo "$(command -v llvm-ar)"
+    return
+  fi
+  if command -v rustc >/dev/null 2>&1; then
+    local sysroot
+    sysroot="$(rustc --print sysroot)"
+    local candidate
+    for candidate in "${sysroot}"/lib/rustlib/*/bin/llvm-ar; do
+      if [ -x "${candidate}" ]; then
+        echo "${candidate}"
+        return
+      fi
+    done
+  fi
+  # Apple's ar writes a Mach-O style symbol table that a GNU-flavour linker
+  # will not read, so it is not a fallback: without llvm-ar the objects are
+  # simply all linked, which --gc-sections then prunes.
+  echo ""
+}
+
+AR="$(find_ar)"
+
+# ---- flags ---------------------------------------------------------------
+
+#
+# -mcmodel=large is the flag that is not obvious. The image is linked at
+# 0x8010000000, which does not fit in the 32 bits that the default "small" code
+# model assumes every address does; without this the link fails with a page of
+# "relocation R_X86_64_32 out of range" for every string literal in the program.
+# The large model makes every symbol reference a full 64-bit absolute one, so
+# there is no GOT, nothing position-dependent to fix up at load time, and
+# nothing for the kernel's loader — which processes no relocations at all — to
+# do. It costs about a quarter of the image size: compiling
+# position-independently instead (-fPIE, RIP-relative, which is what rustc does
+# for these apps) gives a 28 KB hello world where this gives 36 KB. Robustness
+# is worth more than 8 KB here.
+#
+TARGET_FLAGS=(
+  --target=x86_64-unknown-none-elf
+  -fno-stack-protector
+  -fno-pie
+  -mcmodel=large
+  -mno-red-zone
+  -m64
+  -fno-asynchronous-unwind-tables
+  -ffunction-sections
+  -fdata-sections
+  "-isystem${LIBC}/include"
+)
+
+# -ffreestanding is a C-only flag here, and that is deliberate. In C++ it also
+# tells clang that this implementation has no distinguished main, so main gets
+# name-mangled like any other function and crt0's `call main` fails to link with
+# "undefined symbol: main". The alternative is to make every C++ application
+# write `extern "C" int main()`, which is a trap for anyone who has written C++
+# before. Nothing else about the build changes: the headers come from os101-libc
+# either way, and every library function hosted mode might decide to call —
+# memcpy, memset, puts, fmod — this library has.
+C_FLAGS=(-ffreestanding)
+
+CXX_FLAGS=(-fno-exceptions -fno-rtti)
+
+# The library itself is built with -fno-builtin: without it a copy loop in
+# string.c is recognised as a memcpy and compiled into a call to itself.
+LIBC_FLAGS=(-fno-builtin -fno-strict-aliasing -O2 -std=c11)
+
+LINK_FLAGS=(
+  -static
+  --no-dynamic-linker
+  --no-rosegment
+  --gc-sections
+  --build-id=none
+  -z max-page-size=4096
+  -z noexecstack
+  "-T${LIBC}/user.ld"
+)
+
+# ---- the library, cached ------------------------------------------------
+
+mkdir -p "${CACHE}"
+
+# True when the object is missing or older than its source or any header.
+needs_build() {
+  local src="$1"
+  local obj="$2"
+
+  [ -f "${obj}" ] || return 0
+  [ "${src}" -nt "${obj}" ] && return 0
+  if [ -n "$(find "${LIBC}/include" "${LIBC}/src" -name '*.h' -newer "${obj}" -print -quit 2>/dev/null)" ]; then
+    return 0
+  fi
+  [ "${LIBC}/user.ld" -nt "${obj}" ] && return 0
+  return 1
+}
+
+compile_libc_object() {
+  local src="$1"
+  local obj="$2"
+  shift 2
+
+  if needs_build "${src}" "${obj}"; then
+    run "${CLANG}" "${TARGET_FLAGS[@]}" "${C_FLAGS[@]}" "${LIBC_FLAGS[@]}" "$@" \
+      -c "${src}" -o "${obj}" \
+      || die "failed to compile the library file ${src}"
+  fi
+}
+
+LIBC_OBJECTS=()
+
+compile_libc_object "${LIBC}/src/crt0.S" "${CACHE}/crt0.o"
+CRT0="${CACHE}/crt0.o"
+
+for src in "${LIBC}"/src/*.c; do
+  obj="${CACHE}/$(basename "${src}" .c).o"
+  compile_libc_object "${src}" "${obj}"
+  LIBC_OBJECTS+=("${obj}")
+done
+
+CXX_OBJECTS=()
+if [ "${LANG_MODE}" = "c++" ]; then
+  obj="${CACHE}/cxxrt.o"
+  if needs_build "${LIBC}/src/cxxrt.cpp" "${obj}"; then
+    run "${CLANG}" "${TARGET_FLAGS[@]}" "${CXX_FLAGS[@]}" -fno-builtin -O2 \
+      -std=c++17 -x c++ -c "${LIBC}/src/cxxrt.cpp" -o "${obj}" \
+      || die "failed to compile the C++ runtime support"
+  fi
+  CXX_OBJECTS+=("${obj}")
+fi
+
+# An archive means the linker takes only the members an application actually
+# refers to. Without llvm-ar the objects go on the link line instead, and
+# --gc-sections does the pruning.
+# (The ${a[@]+"${a[@]}"} shape is for the bash 3.2 that macOS ships, where
+# expanding an empty array under `set -u` is an error.)
+LIBRARY_ARGS=()
+if [ -n "${AR}" ]; then
+  ARCHIVE="${CACHE}/libos101.a"
+  if [ ! -f "${ARCHIVE}" ] || [ -n "$(find "${CACHE}" -name '*.o' -newer "${ARCHIVE}" -print -quit)" ]; then
+    rm -f "${ARCHIVE}"
+    run "${AR}" crs "${ARCHIVE}" "${LIBC_OBJECTS[@]}" || die "failed to build ${ARCHIVE}"
+  fi
+  LIBRARY_ARGS=(${CXX_OBJECTS[@]+"${CXX_OBJECTS[@]}"} "${ARCHIVE}")
+else
+  LIBRARY_ARGS=(${CXX_OBJECTS[@]+"${CXX_OBJECTS[@]}"} "${LIBC_OBJECTS[@]}")
+fi
+
+# ---- the application ----------------------------------------------------
+
+APP_DIR="$(dirname "${OUT}")"
+mkdir -p "${APP_DIR}"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/os101-cc.XXXXXX")"
+trap 'rm -rf "${WORK}"' EXIT
+
+APP_OBJECTS=()
+for src in "${SOURCES[@]}"; do
+  [ -f "${src}" ] || die "no such file: ${src}"
+  case "${src}" in
+    *.o)
+      APP_OBJECTS+=("${src}")
+      continue
+      ;;
+  esac
+
+  obj="${WORK}/$(basename "${src}").o"
+  case "${src}" in
+    *.c)
+      run "${CLANG}" "${TARGET_FLAGS[@]}" "${C_FLAGS[@]}" "${USER_FLAGS[@]}" \
+        -c "${src}" -o "${obj}" || die "failed to compile ${src}"
+      ;;
+    *.cc|*.cpp|*.cxx|*.C)
+      [ "${LANG_MODE}" = "c++" ] \
+        || die "${src} is C++; use tools/os101-c++ instead"
+      run "${CLANG}" "${TARGET_FLAGS[@]}" "${CXX_FLAGS[@]}" "${USER_FLAGS[@]}" \
+        -c "${src}" -o "${obj}" || die "failed to compile ${src}"
+      ;;
+    *.S|*.s)
+      run "${CLANG}" "${TARGET_FLAGS[@]}" -c "${src}" -o "${obj}" \
+        || die "failed to assemble ${src}"
+      ;;
+    *)
+      die "do not know what to do with ${src}"
+      ;;
+  esac
+  APP_OBJECTS+=("${obj}")
+done
+
+run "${LD}" "${LD_ARGS[@]}" "${LINK_FLAGS[@]}" -o "${OUT}" \
+  "${CRT0}" "${APP_OBJECTS[@]}" "${LIBRARY_ARGS[@]}" \
+  || die "link failed"
+
+# ---- check what came out ------------------------------------------------
+#
+# A broken ELF here is a page fault at boot with no message, so it is worth a
+# few od calls to refuse it now instead. od reads multi-byte fields in the build
+# machine's byte order, which is little-endian on both arm64 and x86-64 Macs and
+# matches the ELF being read.
+
+read_u16() { od -A n -t u2 -j "$2" -N 2 "$1" | tr -d ' \n'; }
+read_u64_hex() { od -A n -t x8 -j "$2" -N 8 "$1" | tr -d ' \n'; }
+
+MAGIC="$(od -A n -t x1 -j 0 -N 4 "${OUT}" | tr -d ' \n')"
+[ "${MAGIC}" = "7f454c46" ] || die "${OUT} is not an ELF file (magic ${MAGIC})"
+
+E_TYPE="$(read_u16 "${OUT}" 16)"
+[ "${E_TYPE}" = "2" ] \
+  || die "${OUT} is not ET_EXEC (e_type=${E_TYPE}); the kernel has no dynamic loader, so the image must be static and non-PIE"
+
+E_MACHINE="$(read_u16 "${OUT}" 18)"
+[ "${E_MACHINE}" = "62" ] || die "${OUT} is not x86-64 (e_machine=${E_MACHINE})"
+
+E_ENTRY="0x$(read_u64_hex "${OUT}" 24)"
+USER_BASE=$((0x8010000000))
+HEAP_BASE=$((0x8020000000))
+if [ "$((E_ENTRY))" -lt "${USER_BASE}" ] || [ "$((E_ENTRY))" -ge "${HEAP_BASE}" ]; then
+  die "${OUT} has its entry point at ${E_ENTRY}, outside the image window 0x8010000000..0x8020000000. Was the linker script used?"
+fi
+
+if [ "${VERBOSE}" -eq 1 ]; then
+  echo "${PROG}: entry ${E_ENTRY}, $(wc -c <"${OUT}" | tr -d ' ') bytes"
+fi
+
+echo "built: ${OUT}"

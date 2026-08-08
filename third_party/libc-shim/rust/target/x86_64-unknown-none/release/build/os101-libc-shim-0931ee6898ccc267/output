@@ -1,0 +1,8 @@
+cargo:rerun-if-changed=/Users/hera/Downloads/os101-main/third_party/libc-shim/rust/../../quickjs/src
+cargo:rerun-if-changed=/Users/hera/Downloads/os101-main/third_party/libc-shim/rust/../../libc-shim/src
+cargo:rerun-if-changed=/Users/hera/Downloads/os101-main/third_party/libc-shim/rust/../../libc-shim/include
+cargo:rerun-if-env-changed=OS101_SHIM_CC
+cargo:rerun-if-env-changed=OS101_SHIM_AR
+cargo:rerun-if-env-changed=OS101_SHIM_NDEBUG
+cargo:rustc-link-search=native=/Users/hera/Downloads/os101-main/third_party/libc-shim/rust/target/x86_64-unknown-none/release/build/os101-libc-shim-0931ee6898ccc267/out
+cargo:rustc-link-lib=static=quickjs

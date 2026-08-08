@@ -1,0 +1,34 @@
+// <cstdlib>: the C header, with its names also visible as std::.
+#ifndef _OS101_CSTDLIB
+#define _OS101_CSTDLIB
+
+#include <stdlib.h>
+
+namespace std {
+using ::abort;
+using ::abs;
+using ::atexit;
+using ::atof;
+using ::atoi;
+using ::atol;
+using ::bsearch;
+using ::calloc;
+using ::div;
+using ::div_t;
+using ::exit;
+using ::free;
+using ::getenv;
+using ::labs;
+using ::ldiv;
+using ::ldiv_t;
+using ::malloc;
+using ::qsort;
+using ::rand;
+using ::realloc;
+using ::srand;
+using ::strtod;
+using ::strtol;
+using ::strtoul;
+} // namespace std
+
+#endif // _OS101_CSTDLIB

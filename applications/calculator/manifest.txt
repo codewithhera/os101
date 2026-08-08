@@ -1,0 +1,3 @@
+name = Calculator
+kind = builtin
+window_kind = Calculator

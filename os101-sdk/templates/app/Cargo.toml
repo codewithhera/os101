@@ -1,0 +1,13 @@
+[package]
+name = "sample_app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+os101-user = { path = "../../../os101-user" }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

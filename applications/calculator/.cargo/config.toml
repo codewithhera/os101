@@ -1,0 +1,8 @@
+[target.x86_64-os101]
+rustflags = [
+    # Use our own linker script so the entire image (PHDRs + all PT_LOAD
+    # segments) lives above 0x10000000 and cannot overlap the kernel's
+    # virtual range. See kernel/src/process.rs USER_BASE.
+    "-C", "link-arg=-Tuser.ld",
+    "-C", "link-arg=--no-rosegment",
+]

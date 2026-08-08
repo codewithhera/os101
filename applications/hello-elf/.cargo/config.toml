@@ -1,0 +1,22 @@
+[build]
+# The same target the kernel is built for, and for the same reason: hardware
+# SSE2 rather than the stock softfloat bare-metal target. An app has to agree
+# with the kernel about the floating-point ABI, because the two exchange
+# arguments across `syscall` — and the kernel's syscall stub now preserves the
+# SSE register file on the app's behalf, which only means anything if the app
+# believes it has one.
+target = "../../kernel/x86_64-os101.json"
+
+[unstable]
+# A JSON target has no prebuilt `core`, so it is compiled from `rust-src` here
+# exactly as it is for the kernel.
+json-target-spec = true
+build-std = ["core", "compiler_builtins", "alloc"]
+build-std-features = ["compiler-builtins-mem"]
+
+[target.x86_64-os101]
+rustflags = [
+    # Keep all LOAD segments in the userspace VA window expected by the kernel.
+    "-C", "link-arg=-Tuser.ld",
+    "-C", "link-arg=--no-rosegment",
+]
