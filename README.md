@@ -427,7 +427,7 @@ Detailed roadmap with checkboxes is in [TASKS.md](TASKS.md).
 - `os101-user/` — userspace syscall crate (Rust)
 - `os101-sdk/` — helper SDK/templates for user apps
 - `third_party/` — QuickJS, TinyCC, and related shims
-- `screen_shots/` — README screenshots (`sc_1.png` … `sc_6.png`)
+- `screen_shots/` — README screenshots (`sc-1.png` … `sc-18.png`)
 - `video/` — optional local preview media
 - `run.sh` — build + image + boot orchestration
 
@@ -667,36 +667,77 @@ If you are unsure where to begin, open an issue titled **“Looking for a first 
 
 ## Screenshots and Video
 
-Screenshots live in `screen_shots/` as `sc_1.png` … `sc_6.png`. Drop in newer captures with the same filenames to refresh this section.
-
 ### Screenshots
 
-| # | Preview | What it shows |
-| --- | --- | --- |
-| 1 | ![OS101 Screenshot 1 — boot / shell](screen_shots/sc_1.png) | Boot screen and interactive shell |
-| 2 | ![OS101 Screenshot 2 — help / commands](screen_shots/sc_2.png) | Shell help and command list |
-| 3 | ![OS101 Screenshot 3 — desktop](screen_shots/sc_3.png) | Graphical desktop |
-| 4 | ![OS101 Screenshot 4 — My Computer](screen_shots/sc_4.png) | File manager / drives |
-| 5 | ![OS101 Screenshot 5 — Applications](screen_shots/sc_5.png) | Application launcher |
-| 6 | ![OS101 Screenshot 6 — apps in use](screen_shots/sc_6.png) | Multiple apps running together |
+1. Boot shell — USB mounted, ready for commands  
+   ![OS101 Screenshot 1 — boot shell](screen_shots/sc-1.png)
 
-Suggested newer shots to drop in later (same filenames are fine): desktop wallpaper, web browser, kids games (ABC Fun / Race Cars), C Code Editor, and the Install OS101 wizard.
+2. Desktop with space wallpaper and sidebar icons  
+   ![OS101 Screenshot 2 — desktop](screen_shots/sc-2.png)
+
+3. Web browser — Wikipedia page with inline images over HTTPS  
+   ![OS101 Screenshot 3 — web browser](screen_shots/sc-3.png)
+
+4. Browser image search / gallery view  
+   ![OS101 Screenshot 4 — image search](screen_shots/sc-4.png)
+
+5. Applications launcher (21 apps) on a custom wallpaper  
+   ![OS101 Screenshot 5 — applications launcher](screen_shots/sc-5.png)
+
+6. Breakout — kid-friendly arcade game  
+   ![OS101 Screenshot 6 — Breakout](screen_shots/sc-6.png)
+
+7. C Code Editor (build & run) plus Calculator  
+   ![OS101 Screenshot 7 — Code Editor and Calculator](screen_shots/sc-7.png)
+
+8. Image Viewer previewing an embedded bitmap  
+   ![OS101 Screenshot 8 — Image Viewer](screen_shots/sc-8.png)
+
+9. Notepad and Clock & Monitor (live heap stats)  
+   ![OS101 Screenshot 9 — Notepad and Monitor](screen_shots/sc-9.png)
+
+10. Notepad file dialog on persistent `/disk/downloads`  
+    ![OS101 Screenshot 10 — file dialog](screen_shots/sc-10.png)
+
+11. Paint — brush, eraser, fill, and colour palette  
+    ![OS101 Screenshot 11 — Paint](screen_shots/sc-11.png)
+
+12. Race Cars — kid-friendly racing game  
+    ![OS101 Screenshot 12 — Race Cars](screen_shots/sc-12.png)
+
+13. Settings — theme and drawn-scene wallpaper  
+    ![OS101 Screenshot 13 — Settings](screen_shots/sc-13.png)
+
+14. Snake — big on-screen controls for kids  
+    ![OS101 Screenshot 14 — Snake](screen_shots/sc-14.png)
+
+15. Space Invaders  
+    ![OS101 Screenshot 15 — Space Invaders](screen_shots/sc-15.png)
+
+16. Terminal app — `help`, `mem`, and `version`  
+    ![OS101 Screenshot 16 — Terminal](screen_shots/sc-16.png)
+
+17. File Explorer browsing `/disk/downloads`  
+    ![OS101 Screenshot 17 — File Explorer](screen_shots/sc-17.png)
+
+18. Install OS101 wizard (permanent disk install)  
+    ![OS101 Screenshot 18 — Install OS101](screen_shots/sc-18.png)
 
 You can also capture screenshots automatically:
 
 ```bash
-./tools/screenshot.sh screen_shots/sc_1.png
-./tools/screenshot.sh screen_shots/sc_3.png "type:gui" key:ret wait:6
-./tools/screenshot.sh screen_shots/sc_5.png "type:gui" key:ret wait:5 key:f2 wait:4
+./tools/screenshot.sh screen_shots/sc-1.png
+./tools/screenshot.sh screen_shots/sc-2.png "type:gui" key:ret wait:6
+./tools/screenshot.sh screen_shots/sc-5.png "type:gui" key:ret wait:5 key:f2 wait:4
 ```
 
 ### Video Preview
 
 Click the image below to watch OS101 on YouTube:
 
-[![OS101 Video Preview](screen_shots/sc_1.png)](https://youtu.be/l3FMmOCiFl0)
+[![OS101 Video Preview](screen_shots/sc-2.png)](https://youtu.be/rim-SwxtjpI)
 
-Direct link: https://youtu.be/l3FMmOCiFl0
+Direct link: https://youtu.be/rim-SwxtjpI
 
 ---
 
